@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G02 Grasp Control</title>
+<style>
+  :root {
+    --bg:      #0f1115;
+    --panel:   #181b21;
+    --panel-2: #1f232b;
+    --border:  #2a2f3a;
+    --text:    #e6e8eb;
+    --muted:   #8b93a1;
+    --accent:  #38bdf8;
+    --accent-dim: #1c4a5e;
+    --red:     #ef4444;
+    --red-dim: #4a1d1d;
+    --amber:   #f59e0b;
+    --green:   #22c55e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  body {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "header header"
+      "main   sidebar";
+    height: 100vh;
+    gap: 1px;
+  }
+  header {
+    grid-area: header;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  header h1 {
+    font-size: 15px; font-weight: 600; margin: 0;
+    letter-spacing: 0.02em;
+  }
+  header .sub {
+    color: var(--muted); font-size: 12px;
+  }
+  main {
+    grid-area: main;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+  }
+  main img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  main .stream-fallback {
+    color: var(--muted);
+    font-size: 13px;
+    position: absolute;
+  }
+  aside {
+    grid-area: sidebar;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 18px 16px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px 0;
+  }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px;
+  }
+  select, input[type="number"] {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  select:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .mode-toggle {
+    display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  }
+  .mode-toggle button {
+    flex: 1; padding: 8px 0; background: var(--panel-2); color: var(--muted);
+    border: none; cursor: pointer; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .mode-toggle button.active {
+    background: var(--accent-dim); color: var(--accent);
+  }
+  .btn-row { display: flex; gap: 10px; }
+  button.action {
+    flex: 1;
+    padding: 11px 0;
+    border-radius: 7px;
+    border: none;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.05s;
+  }
+  button.action:active { transform: scale(0.98); }
+  button.action:disabled { opacity: 0.35; cursor: not-allowed; }
+  #startBtn { background: var(--accent); color: #04222f; }
+  #abortBtn { background: var(--red); color: #2a0a0a; }
+  .status-card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .status-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; margin-bottom: 6px;
+  }
+  .status-row:last-child { margin-bottom: 0; }
+  .status-row .k { color: var(--muted); min-width: 68px; }
+  .status-row .v {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(0,0,0,0);
+  }
+  .dot.idle     { background: var(--muted); }
+  .dot.starting,
+  .dot.running  { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .dot.aborting { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  .dot.done     { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.stopped  { background: var(--muted); }
+  .dot.error    { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  #statusMsg {
+    font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4;
+    min-height: 1.4em;
+  }
+  .conn-warning {
+    display: none;
+    font-size: 11.5px; color: var(--amber);
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 6px; padding: 8px 10px;
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <h1>G02 Grasp Control</h1>
+    <span class="sub">camera feed + operation control</span>
+  </header>
+
+  <main>
+    <img id="streamImg" src="/stream" alt="camera stream"
+         onerror="this.style.display='none'; document.getElementById('streamFallback').style.display='block';">
+    <div id="streamFallback" class="stream-fallback" style="display:none;">stream unavailable</div>
+  </main>
+
+  <aside>
+    <div>
+      <div class="section-title">Mode</div>
+      <div class="mode-toggle">
+        <button id="modeDry" class="active" onclick="setMode('dry_run')">DRY RUN</button>
+        <button id="modeLive" onclick="setMode('live')">LIVE GRASP</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Parameters</div>
+      <div class="field">
+        <label for="target">Target class</label>
+        <select id="target"></select>
+      </div>
+      <div class="field">
+        <label for="gripper">Gripper</label>
+        <select id="gripper"></select>
+      </div>
+      <div class="field">
+        <label for="arm">Arm</label>
+        <select id="arm"></select>
+      </div>
+      <div class="field">
+        <label for="confidence">Confidence threshold</label>
+        <input type="number" id="confidence" min="0" max="1" step="0.05">
+      </div>
+      <div class="field">
+        <label for="samples">Detection samples</label>
+        <input type="number" id="samples" min="1" max="20" step="1">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button id="startBtn" class="action" onclick="onStart()">START</button>
+      <button id="abortBtn" class="action" onclick="onAbort()" disabled>ABORT</button>
+    </div>
+
+    <div>
+      <div class="section-title">Torso Height</div>
+      <div class="mode-toggle">
+        <button id="torsoAuto" class="active" onclick="setTorsoMode('auto')">AUTO</button>
+        <button id="torsoManual" onclick="setTorsoMode('manual')">MANUAL</button>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label for="torsoC">Crouch fraction c (1=lowest, 0=upright)</label>
+        <input type="number" id="torsoC" min="0" max="0.8" step="0.05" disabled>
+      </div>
+      <div class="field">
+        <label>Adjustable range (applies to the c field above)</label>
+        <div class="btn-row" style="gap:8px;">
+          <input type="number" id="torsoCMin" min="0" max="1" step="0.05" value="0"
+                 style="flex:1;" disabled title="lower bound of c">
+          <input type="number" id="torsoCMax" min="0" max="1" step="0.05" value="0.8"
+                 style="flex:1;" disabled title="upper bound of c">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="torsoSetBtn" class="action" onclick="onSetTorso()" disabled
+                style="background: var(--accent); color: #04222f;">SET HEIGHT</button>
+      </div>
+      <div class="status-card" style="margin-top:10px;">
+        <div class="status-row"><span class="k">mode</span><span class="v" id="stTorsoMode">—</span></div>
+        <div class="status-row"><span class="k">c</span><span class="v" id="stTorsoC">—</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Status</div>
+      <div class="status-card">
+        <div class="status-row">
+          <span class="dot idle" id="phaseDot"></span>
+          <span class="v" id="phaseText">idle</span>
+        </div>
+        <div class="status-row"><span class="k">mode</span><span class="v" id="stMode">—</span></div>
+        <div class="status-row"><span class="k">target</span><span class="v" id="stTarget">—</span></div>
+        <div class="status-row"><span class="k">arm</span><span class="v" id="stArm">—</span></div>
+        <div class="status-row"><span class="k">loop</span><span class="v" id="stLoop">—</span></div>
+        <div class="status-row"><span class="k">elapsed</span><span class="v" id="stElapsed">—</span></div>
+        <div id="statusMsg"></div>
+      </div>
+    </div>
+
+    <div class="conn-warning" id="connWarning">Lost connection to robot server — retrying…</div>
+  </aside>
+
+<script>
+let mode = "dry_run";
+let defaults = {};
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("modeDry").classList.toggle("active", m === "dry_run");
+  document.getElementById("modeLive").classList.toggle("active", m === "live");
+}
+
+function fillSelect(id, choices, selected) {
+  const el = document.getElementById(id);
+  el.innerHTML = "";
+  for (const c of choices) {
+    const opt = document.createElement("option");
+    opt.value = c; opt.textContent = c;
+    if (c === selected) opt.selected = true;
+    el.appendChild(opt);
+  }
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch("/api/config");
+    const cfg = await res.json();
+    defaults = cfg.defaults || {};
+    fillSelect("target", cfg.target_choices || [], defaults.target);
+    fillSelect("gripper", cfg.gripper_choices || [], defaults.gripper);
+    fillSelect("arm", cfg.arm_choices || [], defaults.arm);
+    document.getElementById("confidence").value = defaults.confidence ?? 0.5;
+    document.getElementById("samples").value = defaults.samples ?? 5;
+    setConnWarning(false);
+  } catch (e) {
+    setConnWarning(true);
+  }
+}
+
+function setConnWarning(on) {
+  document.getElementById("connWarning").style.display = on ? "block" : "none";
+}
+
+function fmtElapsed(startedAt, endedAt) {
+  if (!startedAt) return "—";
+  const end = endedAt || (Date.now() / 1000);
+  const s = Math.max(0, Math.floor(end - startedAt));
+  const m = Math.floor(s / 60), r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+async function pollStatus() {
+  try {
+    const res = await fetch("/api/status");
+    const st = await res.json();
+    setConnWarning(false);
+
+    const dot = document.getElementById("phaseDot");
+    dot.className = "dot " + (st.phase || "idle");
+    document.getElementById("phaseText").textContent = st.phase || "idle";
+    document.getElementById("stMode").textContent = st.mode || "—";
+    document.getElementById("stTarget").textContent = st.target || "—";
+    document.getElementById("stArm").textContent = st.arm || "—";
+    document.getElementById("stLoop").textContent = st.loop || "—";
+    document.getElementById("stElapsed").textContent = fmtElapsed(st.started_at, st.ended_at);
+    document.getElementById("statusMsg").textContent = st.message || "";
+
+    document.getElementById("startBtn").disabled = !!st.running;
+    document.getElementById("abortBtn").disabled = !st.running;
+    document.getElementById("modeDry").disabled = !!st.running;
+    document.getElementById("modeLive").disabled = !!st.running;
+    document.getElementById("torsoAuto").disabled = !!st.running;
+    document.getElementById("torsoManual").disabled = !!st.running;
+    document.getElementById("torsoSetBtn").disabled = !!st.running || (torsoMode !== "manual");
+    document.getElementById("torsoC").disabled = !!st.running || (torsoMode !== "manual");
+  } catch (e) {
+    setConnWarning(true);
+  }
+}
+
+async function onStart() {
+  const body = {
+    mode: mode,
+    target: document.getElementById("target").value,
+    gripper: document.getElementById("gripper").value,
+    arm: document.getElementById("arm").value,
+    confidence: parseFloat(document.getElementById("confidence").value),
+    samples: parseInt(document.getElementById("samples").value, 10),
+  };
+  try {
+    const res = await fetch("/api/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      document.getElementById("statusMsg").textContent = err.error || "start failed";
+    }
+  } catch (e) {
+    document.getElementById("statusMsg").textContent = "request failed: " + e;
+  }
+  pollStatus();
+}
+
+async function onAbort() {
+  try {
+    const res = await fetch("/api/abort", { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      document.getElementById("statusMsg").textContent = err.error || "abort failed";
+    }
+  } catch (e) {
+    document.getElementById("statusMsg").textContent = "request failed: " + e;
+  }
+  pollStatus();
+}
+
+let torsoMode = "auto";
+let cHardMax = 1.0;
+
+function applyTorsoRanges(cMin, cMax, hardMax) {
+  cHardMax = hardMax;
+  const cEl = document.getElementById("torsoC");
+  cEl.min = cMin;
+  cEl.max = cMax;
+  const loEl = document.getElementById("torsoCMin");
+  const hiEl = document.getElementById("torsoCMax");
+  loEl.max = hardMax;
+  hiEl.max = hardMax;
+  loEl.value = cMin;
+  hiEl.value = cMax;
+}
+
+// Mode is persisted server-side; the UI reads it back from /api/torso, so this
+// only paints the widgets. A bare {"mode": ...} POST does not move the torso.
+function paintTorsoMode(m) {
+  torsoMode = m;
+  document.getElementById("torsoAuto").classList.toggle("active", m === "auto");
+  document.getElementById("torsoManual").classList.toggle("active", m === "manual");
+  document.getElementById("torsoC").disabled = (m !== "manual");
+  document.getElementById("torsoSetBtn").disabled = (m !== "manual");
+}
+
+async function setTorsoMode(m) {
+  paintTorsoMode(m);                    // optimistic — corrected by the response
+  try {
+    const res = await fetch("/api/torso", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: m }),
+    });
+    const st = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      document.getElementById("statusMsg").textContent = st.error || "mode change failed";
+      return;
+    }
+    paintTorsoMode(st.mode || m);
+    document.getElementById("stTorsoMode").textContent = st.mode || "—";
+  } catch (e) {
+    document.getElementById("statusMsg").textContent = "request failed: " + e;
+  }
+}
+
+async function loadTorso() {
+  try {
+    const res = await fetch("/api/torso");
+    const st = await res.json();
+    if (st.c_hard_max !== undefined) {
+      applyTorsoRanges(st.c_min ?? 0, st.c_max ?? 0.8, st.c_hard_max);
+    }
+    // Do NOT repaint the mode here: the operator may have just clicked MANUAL
+    // and a poll firing mid-POST would flick it back. pollStatus() is the
+    // read-back path for server state.
+    if (document.activeElement !== document.getElementById("torsoC")) {
+      document.getElementById("torsoC").value = st.c ?? 1.0;
+    }
+    document.getElementById("stTorsoMode").textContent = st.mode || "—";
+    document.getElementById("stTorsoC").textContent = (st.c ?? "—");
+  } catch (e) {
+    // leave last-known values
+  }
+}
+
+async function onSetTorso() {
+  const cIn = document.getElementById("torsoC");
+  const cLo = document.getElementById("torsoCMin");
+  const cHi = document.getElementById("torsoCMax");
+  const cMin = parseFloat(cLo.value);
+  const cMax = parseFloat(cHi.value);
+  if (!(cMin < cMax)) {
+    document.getElementById("statusMsg").textContent = "c min must be less than c max";
+    return;
+  }
+  const body = { mode: torsoMode, c_min: cMin, c_max: cMax };
+  if (torsoMode === "manual") {
+    body.c = parseFloat(cIn.value);
+  }
+  document.getElementById("statusMsg").textContent = "setting torso height…";
+  try {
+    const res = await fetch("/api/torso", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const st = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      document.getElementById("statusMsg").textContent = st.error || "torso set failed";
+      return;
+    }
+    if (st.c_hard_max !== undefined) {
+      applyTorsoRanges(st.c_min ?? cMin, st.c_max ?? cMax, st.c_hard_max);
+    }
+    // Show what was actually commanded — the server clamps to c_max, so a
+    // typed value that was out of range comes back lower.
+    if (st.applied_c !== null && st.applied_c !== undefined) {
+      cIn.value = st.applied_c;
+      document.getElementById("statusMsg").textContent =
+        (st.applied_c !== body.c)
+          ? `c clamped to ${st.applied_c} (range ${cMin}–${cMax})`
+          : "torso height set";
+    } else {
+      document.getElementById("statusMsg").textContent = "torso mode set";
+    }
+    document.getElementById("stTorsoMode").textContent = st.mode || "—";
+    document.getElementById("stTorsoC").textContent = (st.c ?? "—");
+  } catch (e) {
+    document.getElementById("statusMsg").textContent = "request failed: " + e;
+  }
+}
+
+loadConfig();
+loadTorso();
+pollStatus();
+setInterval(pollStatus, 1000);
+// No loadTorso() poll: it used to reset the mode toggle and the c field every
+// second, which is what made MANUAL appear to "jump back" to AUTO. The torso
+// state only changes when this page changes it, and onSetTorso()/setTorsoMode()
+// already write the response back into the status card.
+</script>
+
+</body>
+</html>

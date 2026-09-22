@@ -1,0 +1,35 @@
+{
+    "head_left_stereo": {
+        "width": "1920",
+        "height": "1536"
+    },
+    "head_right_stereo": {
+        "width": "1920",
+        "height": "1536"
+    },
+    "head_left_fisheye": {
+        "width": "1920",
+        "height": "1536"
+    },
+    "head_right_fisheye": {
+        "width": "1920",
+        "height": "1536"
+    },
+    "head_back_fisheye": {
+        "width": "1920",
+        "height": "1536"
+    },
+    "head_front_rgb": {
+        "width": "640",
+        "height": "400"
+    },
+    "hand_left_rgb": {
+        "width": "1280",
+        "height": "1056"
+    },
+    "hand_right_rgb": {
+        "width": "1280",
+        "height": "1056"
+    }
+}
+
